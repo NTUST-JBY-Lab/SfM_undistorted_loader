@@ -1,3 +1,52 @@
+"""
+OpenSfM 會輸出 reconstruction.json 來記錄相機參數
+
+```
+reconstruction.json: [RECONSTRUCTION, ...]
+
+RECONSTRUCTION: {
+    "cameras": {
+        CAMERA_ID: CAMERA,
+        ...
+    },
+    "shots": {
+        SHOT_ID: SHOT,
+        ...
+    },
+    "points": {
+        POINT_ID: POINT,
+        ...
+    }
+}
+
+CAMERA: {
+    "projection_type": "perspective",  # Can be perspective, brown, fisheye or equirectangular
+    "width": NUMBER,                   # Image width in pixels
+    "height": NUMBER,                  # Image height in pixels
+
+    # Depending on the projection type more parameters are stored.
+    # These are the parameters of the perspective camera.
+    "focal": NUMBER,                   # Estimated focal length normalized by longer dimension
+    "k1": NUMBER,                      # Estimated distortion coefficient
+    "k2": NUMBER,                      # Estimated distortion coefficient
+}
+
+SHOT: {
+    "camera": CAMERA_ID,
+    "rotation": [X, Y, Z],      # Estimated rotation as an angle-axis vector (Rw2c)
+    "translation": [X, Y, Z],   # Estimated translation (Tw2c)
+    ...
+}
+
+POINT: {
+    "coordinates": [X, Y, Z],      # Estimated position of the point
+    "color": [R, G, B],            # Color of the point
+}
+```
+
+參考： https://opensfm.readthedocs.io/en/latest/dataset.html#reconstruction-file-format
+"""
+
 import bpy
 from bpy.props import *
 from bpy_extras.io_utils import ImportHelper

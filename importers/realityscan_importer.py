@@ -25,10 +25,12 @@ XMP 中比較重要的資訊有：
 - xcr:ExportCoordinateSystemType -> 0: Grid Plane
 - xcr:FocalLength35mm -> 35mm equivalent focal length
 - xcr:AspectRatio -> pixel aspect ratio
-- xcr:PrincipalPointU -> shiftX  # 不確定 Principal Point U/V 正向的方向為何
+- xcr:PrincipalPointU -> shiftX  # Principal Point 的位置，(0,0) 為中心，但不確定 Principal Point U/V 正向的方向為何
 - xcr:PrincipalPointV -> shiftY
 - xcr:Rotation -> Rw2c
 - xcr:Position -> Tc2w
+
+參考：[RealityCapture XMP Camera Math](https://dev.epicgames.com/community/learning/knowledge-base/vzwB/realityscan-realitycapture-xmp-camera-math)
 """
 import bpy
 from bpy.props import *
