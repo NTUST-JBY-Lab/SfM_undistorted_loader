@@ -52,12 +52,30 @@ class IntrinsicParameter:
     The focal length is the distance between camera center and image plane normalized by dividing with the larger image dimension.
     """
     img_width: int
+    """
+    The width of the source image
+    """
     img_height: int
+    """
+    The height of the source image
+    """
+    shiftX: float
+    """
+    Move the image plane right relative to the camera's optical axis.
+    The length is normalized by the longer dimension of the image plane.
+    """
+    shiftY: float
+    """
+    Move the image plane up relative to the camera's optical axis.
+    The length is normalized by the longer dimension of the image plane.
+    """
     
-    def __init__(self, flen_normalized: float, img_width: int, img_height: int):
+    def __init__(self, flen_normalized: float, img_width: int, img_height: int, shiftX: float = 0, shiftY: float = 0):
         self.flen_normalized = flen_normalized
         self.img_width = img_width
         self.img_height = img_height
+        self.shiftX = shiftX
+        self.shiftY = shiftY
 
 class ZForwardCamera:
     __base_obj: bpy.types.Object
@@ -87,6 +105,15 @@ class ZForwardCamera:
     def has_arrows(self) -> bool:
         """ 是否有箭頭父物件 """
         return self.__base_obj is not self.__camera_obj
+
+    def delete(self):
+        """ 將自己清除 """
+        if self.has_arrows():
+            bpy.data.objects.remove(self.__base_obj)
+
+        camera_data = self.__camera_obj.data
+        bpy.data.objects.remove(self.__camera_obj)
+        bpy.data.cameras.remove(camera_data)
 
     def rename(self, name: str):
         self.__base_obj.name = name
@@ -123,6 +150,9 @@ class ZForwardCamera:
             # f : img_width = f' : sensor_width
             # f' = f * sensor_width / img_width = f_normalized * sensor_width
             self.__camera_obj.data.lens = param.flen_normalized * self.__camera_obj.data.sensor_width
+
+        self.__camera_obj.data.shift_x = param.shiftX
+        self.__camera_obj.data.shift_y = param.shiftY
 
     def set_bg_image(self, img: bpy.types.Image):
         # 設置圖片

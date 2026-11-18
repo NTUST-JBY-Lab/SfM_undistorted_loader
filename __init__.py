@@ -1,12 +1,14 @@
 import bpy
-from .importers.opensfm_importer import JBY_OT_OpenSfmImporter
 
 #########################################
-#region Menu
+#region Importers
 #########################################
+from .importers.opensfm_importer import JBY_OT_OpenSfmImporter
+from .importers.realityscan_importer import JBY_OT_RealityScanImporter
 
 importer_classes = [
-    JBY_OT_OpenSfmImporter
+    JBY_OT_OpenSfmImporter,
+    JBY_OT_RealityScanImporter
 ]
 
 class JBY_MT_SfM_Undistorted_Loader(bpy.types.Menu):
