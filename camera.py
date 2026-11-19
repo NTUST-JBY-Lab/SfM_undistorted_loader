@@ -10,6 +10,7 @@ Importer 使用順序：
 import bpy
 import mathutils
 import math
+from enum import StrEnum
 
 class ExtrinsicParameter:
     """
@@ -61,13 +62,15 @@ class IntrinsicParameter:
     """
     shiftX: float
     """
-    Move the image plane right relative to the camera's optical axis.
-    The length is normalized by `max(img_width, img_height)`.
+    Horizontal displacement of the image plane relative to the camera's optical axis.
+    The length is normalized by `img_width`.
+    Positive values move the image plane to the right.
     """
     shiftY: float
     """
-    Move the image plane up relative to the camera's optical axis.
-    The length is normalized by `max(img_width, img_height)`.
+    Vertical displacement of the image plane relative to the camera's optical axis.
+    The length is normalized by `img_height`.
+    Positive values move the image plane upward.
     """
     
     def __init__(self, flen_normalized: float, img_width: int, img_height: int, shiftX: float = 0, shiftY: float = 0):
@@ -80,6 +83,15 @@ class IntrinsicParameter:
 class ZForwardCamera:
     __base_obj: bpy.types.Object
     __camera_obj: bpy.types.Object
+
+    class Prop(StrEnum):
+        hasArrow = "__sfm_undistorted_loader__hasArrow"
+        flen_normalized = "__sfm_undistorted_loader__flen_normalized"
+        img_width = "__sfm_undistorted_loader__img_width"
+        img_height = "__sfm_undistorted_loader__img_height"
+        img_name = "__sfm_undistorted_loader__img_name"
+        shiftX = "__sfm_undistorted_loader__shiftX"
+        shiftY = "__sfm_undistorted_loader__shiftY"
     
     def __init__(self, *, add_arrows: bool=True):
         """
@@ -96,15 +108,17 @@ class ZForwardCamera:
             bpy.ops.object.empty_add(type='ARROWS', align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
             self.__base_obj = bpy.context.object            
             self.__camera_obj.parent = self.__base_obj
+            self.__camera_obj[self.Prop.hasArrow] = True
         else:
             self.__camera_obj.rotation_axis_angle = (0, 0, 0, 0)
             self.__base_obj = self.__camera_obj
+            self.__camera_obj[self.Prop.hasArrow] = False
 
         self.rename('Z Forward Camera')
 
     def has_arrows(self) -> bool:
         """ 是否有箭頭父物件 """
-        return self.__base_obj is not self.__camera_obj
+        return self.__camera_obj[self.Prop.hasArrow]
 
     def delete(self):
         """ 將自己清除 """
@@ -119,13 +133,21 @@ class ZForwardCamera:
         self.__base_obj.name = name
         if self.has_arrows():
             self.__camera_obj.name = f"{name} Camera"
+        self.__camera_obj[self.Prop.img_name] = name
 
     def move_to_collection(self, collection: bpy.types.Collection):
+        # move base obj
         cs = self.__base_obj.users_collection
         for c in cs:
             c.objects.unlink(self.__base_obj)
-
         collection.objects.link(self.__base_obj)
+
+        # move camera obj
+        if self.has_arrows():
+            cs = self.__camera_obj.users_collection
+            for c in cs:
+                c.objects.unlink(self.__camera_obj)
+            collection.objects.link(self.__camera_obj)
         
     def apply_extrinsic_param(self, param: ExtrinsicParameter):
         if self.has_arrows():
@@ -134,12 +156,22 @@ class ZForwardCamera:
             self.__base_obj.matrix_world = param.get_cam_to_world_matrix() @ mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
         
     def apply_intrinsic_param(self, param: IntrinsicParameter):
+        # record
+        self.__camera_obj[self.Prop.flen_normalized] = param.flen_normalized
+        self.__camera_obj[self.Prop.img_width] = param.img_width
+        self.__camera_obj[self.Prop.img_height] = param.img_height
+        self.__camera_obj[self.Prop.shiftX] = param.shiftX
+        self.__camera_obj[self.Prop.shiftY] = param.shiftY
+
+        ##################################################################################
+        # Img Size & Focal Length
+        ##################################################################################
         res_width = bpy.context.scene.render.resolution_x
         res_height = bpy.context.scene.render.resolution_y
         res_aspect = res_width / res_height
 
         img_aspect = param.img_width / param.img_height
-        flen = param.flen_normalized * max(param.img_width, param.img_height)
+        flen_pixel = param.flen_normalized * max(param.img_width, param.img_height)
 
         # 如果 Render Resolution 比輸入的影像還寬，則將影像垂直縮放可以避免寬超出去
         if res_aspect > img_aspect:
@@ -149,7 +181,11 @@ class ZForwardCamera:
             # 固定成像平面的高度，然後按比例將 focal length 縮放為 f'
             # f : img_height = f' : sensor_height
             # f' = f * sensor_height / img_height
-            self.__camera_obj.data.lens = flen * self.__camera_obj.data.sensor_height / param.img_height
+            sensor_height = self.__camera_obj.data.sensor_height
+            pixel_to_mm_scale = sensor_height / param.img_height
+            self.__camera_obj.data.lens = flen_pixel * pixel_to_mm_scale
+
+            shift_base_unit = sensor_height
         else:
             # Fit Horizontal -> 成像平面的寬固定為 sensor_width
             self.__camera_obj.data.sensor_fit = 'HORIZONTAL'
@@ -157,27 +193,17 @@ class ZForwardCamera:
             # 固定成像平面的寬度，然後按比例將 focal length 縮放為 f'
             # f : img_width = f' : sensor_width
             # f' = f * sensor_width / img_width
-            self.__camera_obj.data.lens = flen * self.__camera_obj.data.sensor_width / param.img_width
+            sensor_width = self.__camera_obj.data.sensor_width
+            pixel_to_mm_scale = sensor_width / param.img_width
+            self.__camera_obj.data.lens = flen_pixel * pixel_to_mm_scale
 
-        # Blender 的 shift_x, shift_y 在 VERTICAL FIT 下以 sensor height normalized
-        # 在 HORIZONTAL FIT 下以 sensor width normalized
-        if (param.img_width >= param.img_height and self.__camera_obj.data.sensor_fit == 'HORIZONTAL') \
-            or (param.img_width <= param.img_height and self.__camera_obj.data.sensor_fit == 'VERTICAL'):
-            # 在這情況下 param.shiftX/Y 都是以和 blender shift_x/y 同樣方向進行 normalized
-            self.__camera_obj.data.shift_x = param.shiftX
-            self.__camera_obj.data.shift_y = param.shiftY
-        
-        elif self.__camera_obj.data.sensor_fit == 'HORIZONTAL':
-            # param.shiftX/Y 以垂直方向 normalized，而 blender shift_x/y 以水平方向 normalized
-            # 要讓 param.shiftX/Y 換方向 normalized
-            self.__camera_obj.data.shift_x = param.shiftX * param.img_height / param.img_width
-            self.__camera_obj.data.shift_y = param.shiftY * param.img_height / param.img_width
+            shift_base_unit = sensor_width
 
-        else: # self.__camera_obj.data.sensor_fit == 'VERTICAL'
-            # param.shiftX/Y 以水平方向 normalized，而 blender shift_x/y 以垂直方向 normalized
-            # 要讓 param.shiftX/Y 換方向 normalized
-            self.__camera_obj.data.shift_x = param.shiftX * param.img_width / param.img_height
-            self.__camera_obj.data.shift_y = param.shiftY * param.img_width / param.img_height
+        # Blender 的 shift_x 及 shift_y 會依據不同 Fit 方式而用不同方式正規化
+        # VERTICAL Fit -> 將 shift mm 除以 sensor height
+        # HORIZONTAL Fit -> 將 shift mm 除以 sensor width
+        self.__camera_obj.data.shift_x = param.shiftX * param.img_width * pixel_to_mm_scale / shift_base_unit
+        self.__camera_obj.data.shift_y = param.shiftY * param.img_height * pixel_to_mm_scale / shift_base_unit
 
 
     def set_bg_image(self, img: bpy.types.Image):

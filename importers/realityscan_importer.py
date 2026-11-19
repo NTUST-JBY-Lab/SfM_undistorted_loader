@@ -23,17 +23,17 @@ XMP 格式類似如下（RealityScan 2.1.1）：
 
 XMP 中比較重要的資訊有：
 - xcr:ExportCoordinateSystemType -> 0: Grid Plane
-- xcr:FocalLength35mm -> 35mm equivalent focal length
+- xcr:FocalLength35mm -> 35mm equivalent focal length。當 sensor 大小為 width 36mm 時，等效的 focal length (mm)
 - xcr:AspectRatio -> pixel aspect ratio
-- xcr:PrincipalPointU -> -shiftX  
-- xcr:PrincipalPointV -> shiftY
+- xcr:PrincipalPointU -> normalized by longer dimension
+- xcr:PrincipalPointV -> normalized by longer dimension
 - xcr:Rotation -> Rw2c
 - xcr:Position -> Tc2w
 
 Note: 
   PrincipalPoint U/V 為 Principal Point 在圖片上的位置，其中圖片中心為 (0, 0)，向右為 +X ，向下為 +Y 。
-  PrincipalPointU 在右邊（ > 0 ）時，成像平面要向左移（ shiftX < 0 ），所以 xcr:PrincipalPointU = -shiftX。
-  PrincipalPointV 在下面（ > 0 ）時，成像平面要向上移（ shiftY > 0 ），所以 xcr:PrincipalPointU = shiftY。
+  PrincipalPointU 在右邊（ > 0 ）時，成像平面要向左移（ shiftX < 0 ），所以 xcr:PrincipalPointU 正比於 -shiftX。
+  PrincipalPointV 在下面（ > 0 ）時，成像平面要向上移（ shiftY > 0 ），所以 xcr:PrincipalPointV 正比於 shiftY。
 
 
 參考：[RealityCapture XMP Camera Math](https://dev.epicgames.com/community/learning/knowledge-base/vzwB/realityscan-realitycapture-xmp-camera-math)
@@ -153,16 +153,14 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
               # Intrinsic #################################################################
               focal_35mm = float(_xmp_attribute(description, 'FocalLength35mm'))
               aspect_ratio = float(_xmp_attribute(description, 'AspectRatio'))
-              shift_x = -float(_xmp_attribute(description, 'PrincipalPointU'))
-              shift_y = float(_xmp_attribute(description, 'PrincipalPointV'))
+              shift_x = -float(_xmp_attribute(description, 'PrincipalPointU')) * max(img_width, img_height) / img_width
+              shift_y = float(_xmp_attribute(description, 'PrincipalPointV')) * max(img_width, img_height) / img_height
 
               if aspect_ratio != 1.0:
                   self.report({'WARNING'}, f"SHOT: {img_path.name} aspect ratio != 1")
 
-              # A 35 mm equivalent focal length is normalized by the 36 mm
-              # sensor width. Applying it in IntrinsicParameter then scales it
-              # by Blender's active sensor dimension.
-              flen_normalized = focal_35mm / 36.0
+              # 先對 focal_35mm 縮放到 image 的 pixel 尺度，再除以最長邊做正規化
+              flen_normalized = focal_35mm * (img_width / 36.0) / max(img_width, img_height)
               camera.apply_intrinsic_param(
                   IntrinsicParameter(
                       flen_normalized,
