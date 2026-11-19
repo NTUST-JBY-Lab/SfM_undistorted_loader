@@ -113,7 +113,10 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
 
         # For each image
         for img_path in img_list:
-          img_path = Path(img_path.strip().strip('"'))
+          img_path = img_path.strip().strip('"')
+          if not img_path:
+              continue
+          img_path = Path(img_path)
           if not img_path.is_absolute():
               img_path = Path(self.filepath).parent / img_path
           xmp_path = img_path.with_suffix('.xmp')
@@ -145,12 +148,17 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
           camera.rename(img_path.name)
 
           try:
+              ######################################################################
+              # 讀圖片
               # Load image first so intrinsic parameters use the actual source resolution.
+              ######################################################################
               blender_img = bpy.data.images.load(str(img_path))
               img_width, img_height = blender_img.size
               print(f"{img_path} is loaded")
 
-              # Intrinsic #################################################################
+              ######################################################################
+              # Intrinsic
+              ######################################################################
               focal_35mm = float(_xmp_attribute(description, 'FocalLength35mm'))
               aspect_ratio = float(_xmp_attribute(description, 'AspectRatio'))
               shift_x = -float(_xmp_attribute(description, 'PrincipalPointU')) * max(img_width, img_height) / img_width
@@ -171,7 +179,9 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
                   )
               )
 
-              # Extrinsic #################################################################
+              ######################################################################
+              # Extrinsic
+              ######################################################################
               rotation_text = _xmp_child_text(description, 'Rotation')
               position_text = _xmp_child_text(description, 'Position')
               if not rotation_text or not position_text:
@@ -193,6 +203,9 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
               T_w2c = (-1 * R_w2c) @ T_c2w
               camera.apply_extrinsic_param(ExtrinsicParameter(R_w2c, T_w2c))
 
+              ######################################################################
+              # Check is undistorted
+              ######################################################################
               distortion_model = _xmp_attribute(description, 'DistortionModel')
               distortion = _xmp_attribute(description, 'DistortionCoeficients')
               if distortion_model and distortion_model.lower() != 'perspective':
@@ -204,7 +217,9 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
                   except ValueError:
                       pass
 
-              # Background #######################################################################
+              ######################################################################
+              # Background
+              ######################################################################
               if self.add_background:
                   camera.set_bg_image(blender_img)
               else:
