@@ -175,7 +175,8 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
                       img_width,
                       img_height,
                       shift_x,
-                      shift_y
+                      shift_y,
+                      aspect_ratio
                   )
               )
 

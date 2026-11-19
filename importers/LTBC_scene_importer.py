@@ -134,7 +134,8 @@ class JBY_OT_LTBCSceneImporter(bpy.types.Operator, ImportHelper, CommonImporterP
                     img_width,
                     img_height,
                     0.5 - ppx,
-                    ppy - 0.5
+                    ppy - 0.5,
+                    pixel_aspect
                 ))
                 camera.apply_extrinsic_param(ExtrinsicParameter(
                     R_w2c,

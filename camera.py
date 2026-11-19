@@ -72,13 +72,18 @@ class IntrinsicParameter:
     The length is normalized by `img_height`.
     Positive values move the image plane upward.
     """
+    pixel_aspect_ratio: float
+    """
+    The aspect ratio of the pixel
+    """
     
-    def __init__(self, flen_normalized: float, img_width: int, img_height: int, shiftX: float = 0, shiftY: float = 0):
+    def __init__(self, flen_normalized: float, img_width: int, img_height: int, shiftX: float = 0, shiftY: float = 0, pixel_aspect_ratio: float = 1):
         self.flen_normalized = flen_normalized
         self.img_width = img_width
         self.img_height = img_height
         self.shiftX = shiftX
         self.shiftY = shiftY
+        self.pixel_aspect_ratio = pixel_aspect_ratio
 
 class ZForwardCamera:
     __base_obj: bpy.types.Object
@@ -92,6 +97,7 @@ class ZForwardCamera:
         img_name = "__sfm_undistorted_loader__img_name"
         shiftX = "__sfm_undistorted_loader__shiftX"
         shiftY = "__sfm_undistorted_loader__shiftY"
+        pixel_aspect_ratio = "__sfm_undistorted_loader__pixel_aspect_ratio"
     
     def __init__(self, *, add_arrows: bool=True):
         """
@@ -162,6 +168,10 @@ class ZForwardCamera:
         self.__camera_obj[self.Prop.img_height] = param.img_height
         self.__camera_obj[self.Prop.shiftX] = param.shiftX
         self.__camera_obj[self.Prop.shiftY] = param.shiftY
+        self.__camera_obj[self.Prop.pixel_aspect_ratio] = param.pixel_aspect_ratio
+
+        if param.pixel_aspect_ratio != 1:
+            print("Pixel aspect ration != 1 is not supported, the visualization willl be incorrect")
 
         ##################################################################################
         # Img Size & Focal Length
@@ -199,6 +209,9 @@ class ZForwardCamera:
 
             shift_base_unit = sensor_width
 
+        ##################################################################################
+        # Shift
+        ##################################################################################
         # Blender 的 shift_x 及 shift_y 會依據不同 Fit 方式而用不同方式正規化
         # VERTICAL Fit -> 將 shift mm 除以 sensor height
         # HORIZONTAL Fit -> 將 shift mm 除以 sensor width
