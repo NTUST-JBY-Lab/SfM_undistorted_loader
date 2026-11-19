@@ -49,7 +49,7 @@ class IntrinsicParameter:
     """
     flen_normalized: float
     """ 
-    The focal length is the distance between camera center and image plane normalized by dividing with the larger image dimension.
+    The focal length is the distance between camera center and image plane normalized by `max(img_width, img_height)`.
     """
     img_width: int
     """
@@ -62,12 +62,12 @@ class IntrinsicParameter:
     shiftX: float
     """
     Move the image plane right relative to the camera's optical axis.
-    The length is normalized by the longer dimension of the image plane.
+    The length is normalized by `max(img_width, img_height)`.
     """
     shiftY: float
     """
     Move the image plane up relative to the camera's optical axis.
-    The length is normalized by the longer dimension of the image plane.
+    The length is normalized by `max(img_width, img_height)`.
     """
     
     def __init__(self, flen_normalized: float, img_width: int, img_height: int, shiftX: float = 0, shiftY: float = 0):
@@ -134,25 +134,51 @@ class ZForwardCamera:
             self.__base_obj.matrix_world = param.get_cam_to_world_matrix() @ mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
         
     def apply_intrinsic_param(self, param: IntrinsicParameter):
-        if param.img_height >= param.img_width:
+        res_width = bpy.context.scene.render.resolution_x
+        res_height = bpy.context.scene.render.resolution_y
+        res_aspect = res_width / res_height
+
+        img_aspect = param.img_width / param.img_height
+        flen = param.flen_normalized * max(param.img_width, param.img_height)
+
+        # 如果 Render Resolution 比輸入的影像還寬，則將影像垂直縮放可以避免寬超出去
+        if res_aspect > img_aspect:
             # Fit Vertical -> 成像平面的高固定為 sensor_height
             self.__camera_obj.data.sensor_fit = 'VERTICAL'
             
             # 固定成像平面的高度，然後按比例將 focal length 縮放為 f'
             # f : img_height = f' : sensor_height
-            # f' = f * sensor_height / img_height = f_normalized * sensor_height
-            self.__camera_obj.data.lens = param.flen_normalized * self.__camera_obj.data.sensor_height
+            # f' = f * sensor_height / img_height
+            self.__camera_obj.data.lens = flen * self.__camera_obj.data.sensor_height / param.img_height
         else:
             # Fit Horizontal -> 成像平面的寬固定為 sensor_width
             self.__camera_obj.data.sensor_fit = 'HORIZONTAL'
             
             # 固定成像平面的寬度，然後按比例將 focal length 縮放為 f'
             # f : img_width = f' : sensor_width
-            # f' = f * sensor_width / img_width = f_normalized * sensor_width
-            self.__camera_obj.data.lens = param.flen_normalized * self.__camera_obj.data.sensor_width
+            # f' = f * sensor_width / img_width
+            self.__camera_obj.data.lens = flen * self.__camera_obj.data.sensor_width / param.img_width
 
-        self.__camera_obj.data.shift_x = param.shiftX
-        self.__camera_obj.data.shift_y = param.shiftY
+        # Blender 的 shift_x, shift_y 在 VERTICAL FIT 下以 sensor height normalized
+        # 在 HORIZONTAL FIT 下以 sensor width normalized
+        if (param.img_width >= param.img_height and self.__camera_obj.data.sensor_fit == 'HORIZONTAL') \
+            or (param.img_width <= param.img_height and self.__camera_obj.data.sensor_fit == 'VERTICAL'):
+            # 在這情況下 param.shiftX/Y 都是以和 blender shift_x/y 同樣方向進行 normalized
+            self.__camera_obj.data.shift_x = param.shiftX
+            self.__camera_obj.data.shift_y = param.shiftY
+        
+        elif self.__camera_obj.data.sensor_fit == 'HORIZONTAL':
+            # param.shiftX/Y 以垂直方向 normalized，而 blender shift_x/y 以水平方向 normalized
+            # 要讓 param.shiftX/Y 換方向 normalized
+            self.__camera_obj.data.shift_x = param.shiftX * param.img_height / param.img_width
+            self.__camera_obj.data.shift_y = param.shiftY * param.img_height / param.img_width
+
+        else: # self.__camera_obj.data.sensor_fit == 'VERTICAL'
+            # param.shiftX/Y 以水平方向 normalized，而 blender shift_x/y 以垂直方向 normalized
+            # 要讓 param.shiftX/Y 換方向 normalized
+            self.__camera_obj.data.shift_x = param.shiftX * param.img_width / param.img_height
+            self.__camera_obj.data.shift_y = param.shiftY * param.img_width / param.img_height
+
 
     def set_bg_image(self, img: bpy.types.Image):
         # 設置圖片
