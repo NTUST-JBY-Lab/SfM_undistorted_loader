@@ -48,7 +48,7 @@ class CommonExporterProperty:
         src_img_path = camera.get_property(ZForwardCamera.Prop.img_path)
 
         if src_img_path:
-            if not Path(src_img_path).samefile(target_path):
+            if not (target_path.exists() and Path(src_img_path).samefile(target_path)):
                 shutil.copy(src_img_path, target_path)
         else:
             file_extension_dict = {
