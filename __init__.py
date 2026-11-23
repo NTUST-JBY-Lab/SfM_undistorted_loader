@@ -7,7 +7,7 @@ from .importers.opensfm_importer import JBY_OT_OpenSfmImporter
 from .importers.realityscan_importer import JBY_OT_RealityScanImporter
 from .importers.LTBC_scene_importer import JBY_OT_LTBCSceneImporter
 
-importer_classes = [
+importer_classes : list[bpy.types.Operator] = [
     JBY_OT_OpenSfmImporter,
     JBY_OT_RealityScanImporter,
     JBY_OT_LTBCSceneImporter
@@ -46,7 +46,7 @@ def file_import_menu_func(self, context):
 #########################################
 from .exporters.LTBC_scene_exporter import JBY_OT_LTBCSceneExporter
 
-exporter_classes = [
+exporter_classes : list[bpy.types.Operator] = [
     JBY_OT_LTBCSceneExporter
 ]
 
@@ -67,15 +67,39 @@ def file_export_menu_func(self, context):
     self.layout.menu(JBY_MT_SfM_Undistorted_Exporter.bl_idname)
 
 #########################################
+#region Tool Panel
+#########################################
+from .tools import *
+
+tools_classes : list[bpy.types.Operator] = [
+    JBY_OP_CreateZForwardCamera,
+    JBY_OP_RemoveArrowOfZForwardCamera
+]
+
+class JBY_PT_SfM_Undistorted_ToolPanel(bpy.types.Panel):
+    bl_idname = "JBY_PT_SfM_Undistorted_ToolPanel"
+    bl_label = "SfM Undistorted Tools"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'SfM Undistorted'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator(JBY_OP_CreateZForwardCamera.bl_idname)
+        layout.operator(JBY_OP_RemoveArrowOfZForwardCamera.bl_idname)
+
+#########################################
 #region Register
 #########################################
 
 classes = [
     JBY_MT_SfM_Undistorted_Loader,
-    JBY_MT_SfM_Undistorted_Exporter
+    JBY_MT_SfM_Undistorted_Exporter,
+    JBY_PT_SfM_Undistorted_ToolPanel,
 ]
 classes += importer_classes
 classes += exporter_classes
+classes += tools_classes
 
 def register():
     for c in classes:

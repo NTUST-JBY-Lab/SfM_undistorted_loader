@@ -151,7 +151,7 @@ class ZForwardCamera:
                 self.__camera_obj.lock_scale[:] = [False, False, False]
 
                 self.__base_obj.matrix_world = self.__camera_obj.matrix_world @ mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
-                self.__camera_obj.matrix_world = mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
+                self.__camera_obj.matrix_basis = mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
 
             # Lock Editing
             self.__camera_obj.use_camera_lock_parent = True
@@ -200,6 +200,26 @@ class ZForwardCamera:
     def get_base_obj(self) -> bpy.types.Object:
         """ 取得箭頭父物件（如果 has_arrows 為 True，否則為相機物件） """
         return self.__base_obj
+
+    def remove_arrow(self):
+        """ 移除箭頭父物件，並將相機物件的 parent 設為原本箭頭父物件的 parent """
+        if self.has_arrows():
+            # unlock
+            self.__camera_obj.lock_location[:] = [False, False, False]
+            self.__camera_obj.lock_rotation[:] = [False, False, False]
+            self.__camera_obj.lock_scale[:] = [False, False, False]
+
+            # set camera transform to keep the same world transform
+            old_world_matrix = self.__camera_obj.matrix_world.copy()
+
+            # change parent
+            self.__camera_obj.parent = self.__base_obj.parent
+            self.__camera_obj.matrix_world = old_world_matrix
+
+            # remove arrow
+            bpy.data.objects.remove(self.__base_obj)
+            self.__camera_obj[self.Prop.hasArrow] = False
+            self.__base_obj = self.__camera_obj
 
     ######################################################################################
     # region Edit
