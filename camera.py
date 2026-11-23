@@ -256,6 +256,7 @@ class ZForwardCamera:
     # region Camera Parameter
     ######################################################################################
     def extract_extrinsic_param(self) -> ExtrinsicParameter:
+        """ 提取相機的外參 （World to Camera Transform） """
         if self.has_arrows():
             cam_to_world = self.__base_obj.matrix_world
         else:
@@ -273,15 +274,29 @@ class ZForwardCamera:
         else:
             self.__base_obj.matrix_world = param.get_cam_to_world_matrix() @ mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
 
+    def cache_intrinsic_param(self, param: IntrinsicParameter):
+        """
+        將內參快取到相機物件的自訂屬性中。
+        方便 Exporter 取得，以及避免 resolution 修改而導致讀入的內參和 Blender 中的不一致。
+        """
+        self.__camera_obj[self.Prop.flen_normalized] = param.flen_normalized
+        self.__camera_obj[self.Prop.img_width] = param.img_width
+        self.__camera_obj[self.Prop.img_height] = param.img_height
+        self.__camera_obj[self.Prop.shiftX] = param.shiftX
+        self.__camera_obj[self.Prop.shiftY] = param.shiftY
+        self.__camera_obj[self.Prop.pixel_aspect_ratio] = param.pixel_aspect_ratio
+
     def extract_intrinsic_param(self, use_cache: bool = True) -> IntrinsicParameter:
         """
         從相機物件中提取內參，若 use_cache 為 True，則會先嘗試從相機物件的自訂屬性中讀取內參。
 
-        :param use_cache: 是否使用快取，若為 True，則會從相機物件的自訂屬性中讀取內參。若為 False，則會直接從相機物件中提取內參
-        :return intrinsic: 提取到的內參
+        :param use_cache: 
+            是否使用快取。
 
-        :raises ValueError: 若 use_cache 為 True，且相機物件中沒有快取的內參，則會拋出 ValueError 
-        :raises NotImplementedError: 若 use_cache 為 False，則會拋出 NotImplementedError，因為目前尚未實作從相機物件中提取內參的功能
+            - 若為 True，則會從相機物件的自訂屬性中讀取內參。
+            - 若為 False，則會直接從相機物件中提取內參。
+
+        :return intrinsic: 提取到的內參
         """
         if use_cache:
             try:
@@ -294,20 +309,48 @@ class ZForwardCamera:
                 
                 return IntrinsicParameter(flen_normalized, img_width, img_height, shiftX, shiftY, pixel_aspect_ratio)
             except KeyError:
-                raise ValueError("Intrinsic parameters not found in camera object. Please set them first.")
+                pass
 
+        ################################################################
         # 從相機物件中提取內參
-        raise NotImplementedError("Extracting intrinsic parameters from camera object is not implemented yet. Please use cached values.")
+        ################################################################
+        # 畫面大小 = Render Resolution
+        img_width = bpy.context.scene.render.resolution_x
+        img_height = bpy.context.scene.render.resolution_y
 
+        # 如果相機的 sensor_fit 不是 AUTO，則使用相機的 sensor_fit，否則根據畫面大小決定 sensor_fit
+        if self.__camera_obj.data.sensor_fit != 'AUTO':
+            sensor_fit = self.__camera_obj.data.sensor_fit  
+        else:
+            sensor_fit = ('HORIZONTAL' if img_width >= img_height else 'VERTICAL')
+
+        # 依據 sensor_fit 推出 sensor_width 與 sensor_height
+        if sensor_fit == 'VERTICAL':
+            sensor_height = self.__camera_obj.data.sensor_height
+            sensor_width = sensor_height * img_width / img_height
+        else:
+            sensor_width = self.__camera_obj.data.sensor_width
+            sensor_height = sensor_width * img_height / img_width
+
+        # flen_normalized = f / max(img_width, img_height)
+        flen_normalized = self.__camera_obj.data.lens / max(sensor_width, sensor_height)
+
+        # 這是 apply_intrinsic_param 的反推公式，將 blender 的 shift_x/y 轉換成自己定義的 shiftX/Y
+        # shiftX = self.__camera_obj.data.shift_x * shift_base_unit / (img_width * pixel_to_mm_scale)
+        # shiftY = self.__camera_obj.data.shift_y * shift_base_unit / (img_height * pixel_to_mm_scale)
+        pixel_to_mm_scale = (sensor_height / img_height) if sensor_fit == 'VERTICAL' else (sensor_width / img_width)
+        shift_base_unit = sensor_height if sensor_fit == 'VERTICAL' else sensor_width
+        shiftX = self.__camera_obj.data.shift_x * shift_base_unit / (img_width * pixel_to_mm_scale)
+        shiftY = self.__camera_obj.data.shift_y * shift_base_unit / (img_height * pixel_to_mm_scale)
+
+        # pixel_aspect_ratio
+        pixel_aspect_ratio = bpy.context.scene.render.pixel_aspect_x / bpy.context.scene.render.pixel_aspect_y
+
+        return IntrinsicParameter(flen_normalized, img_width, img_height, shiftX, shiftY, pixel_aspect_ratio)
         
     def apply_intrinsic_param(self, param: IntrinsicParameter):
         # record
-        self.__camera_obj[self.Prop.flen_normalized] = param.flen_normalized
-        self.__camera_obj[self.Prop.img_width] = param.img_width
-        self.__camera_obj[self.Prop.img_height] = param.img_height
-        self.__camera_obj[self.Prop.shiftX] = param.shiftX
-        self.__camera_obj[self.Prop.shiftY] = param.shiftY
-        self.__camera_obj[self.Prop.pixel_aspect_ratio] = param.pixel_aspect_ratio
+        self.cache_intrinsic_param(param)
 
         if param.pixel_aspect_ratio != 1:
             print("Pixel aspect ration != 1 is not supported, the visualization willl be incorrect")

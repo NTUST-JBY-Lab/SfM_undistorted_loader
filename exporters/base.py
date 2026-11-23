@@ -48,10 +48,41 @@ class CommonExporterProperty:
         src_img_path = camera.get_property(ZForwardCamera.Prop.img_path)
 
         if src_img_path:
-            shutil.copy(src_img_path, target_path)
+            if not Path(src_img_path).samefile(target_path):
+                shutil.copy(src_img_path, target_path)
         else:
-            raise NotImplementedError(f"Rendering then export is not implemented.")
-        
-        
+            file_extension_dict = {
+                '.jpeg': 'JPEG', 
+                '.jpg': 'JPEG',
+                '.exr': 'OPEN_EXR', 
+                '.png': 'PNG', 
+                '.webp': 'WEBP', 
+                '.bmp': 'BMP', 
+                '.cin': 'CINEON', 
+                '.dpx': 'DPX', 
+                '.rgb': 'IRIS', 
+                '.jp2': 'JPEG2000', 
+                '.hdr': 'HDR', 
+                '.tga': 'TARGA',
+                '.tiff': 'TIFF',
+                '.tif': 'TIFF'
+            }
 
+            # record the original render settings
+            old_output = bpy.context.scene.render.filepath
+            old_use_file_extension = bpy.context.scene.render.use_file_extension
+            old_file_format = bpy.context.scene.render.image_settings.file_format
+            old_camera = bpy.context.scene.camera
 
+            # Render the image from the camera's perspective and save it to the target path
+            bpy.context.scene.render.filepath = str(target_path)
+            bpy.context.scene.render.use_file_extension = False
+            bpy.context.scene.render.image_settings.file_format = file_extension_dict.get(target_path.suffix.lower(), 'PNG')  # Default to PNG if unknown
+            bpy.context.scene.camera = camera.get_camera_obj()
+            bpy.ops.render.render(write_still=True)
+
+            # restore the original render settings
+            bpy.context.scene.render.filepath = old_output
+            bpy.context.scene.render.use_file_extension = old_use_file_extension
+            bpy.context.scene.render.image_settings.file_format = old_file_format
+            bpy.context.scene.camera = old_camera
