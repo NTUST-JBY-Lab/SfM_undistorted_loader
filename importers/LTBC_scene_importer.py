@@ -27,7 +27,7 @@ from ..camera import *
 class JBY_OT_LTBCSceneImporter(bpy.types.Operator, ImportHelper, CommonImporterProperty):
     """ Load the cameras from LTBC scene folder """
     bl_idname = "jby.load_ltbc_scene_undistorted"
-    bl_label = "LTBC Scene Folder Undistorted"
+    bl_label = "LTBC Scene Folder Undistorted (folder with images + .cam)"
     bl_options = {'REGISTER', 'UNDO'}
 
     # property for ImportHelper
@@ -129,6 +129,7 @@ class JBY_OT_LTBCSceneImporter(bpy.types.Operator, ImportHelper, CommonImporterP
                 ######################################################################
                 camera = ZForwardCamera(add_arrows=self.add_arrows)
                 camera.rename(image_path.name)
+                camera.set_property(ZForwardCamera.Prop.img_path, str(image_path))
                 camera.apply_intrinsic_param(IntrinsicParameter(
                     focal,
                     img_width,

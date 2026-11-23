@@ -146,6 +146,7 @@ class JBY_OT_RealityScanImporter(bpy.types.Operator, ImportHelper, CommonImporte
           # Create Camera
           camera = ZForwardCamera(add_arrows=self.add_arrows)
           camera.rename(img_path.name)
+          camera.set_property(ZForwardCamera.Prop.img_path, str(img_path))
 
           try:
               ######################################################################

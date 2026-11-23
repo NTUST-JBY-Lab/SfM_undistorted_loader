@@ -1,6 +1,6 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "terminal.integrated.env.windows": {
-        "PATH": "${env:PATH};E:\\Blender 5.0"
-    }
+        "PATH": "E:\\Blender 5.0;C:\\Program Files\\Blender Foundation\\Blender 5.0;C:\\Program Files\\Blender Foundation\\Blender 5.0\\5.0\\python\\bin;${env:PATH}"
+    },
 }

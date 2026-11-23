@@ -1,16 +1,24 @@
 """
 這個 Module 定義了 ExtrinsicParameter, IntrinsicParameter, ZForwardCamera
 
-Importer 使用順序：
+Importer 該做的工作如下：
 1. 從檔案 parse 出相機參數並存在 ExtrinsicParameter, IntrinsicParameter 中
 2. 建立 ZForwardCamera 並應用參數
-3. (Optional) 載圖片後 -> set_bg_image
+3. 將原圖片路徑寫入 ZForwardCamera 的 Prop.img_path 屬性，以確保 Exporter 可以找到原圖片
+4. (Optional) 載圖片後 -> set_bg_image
+
+Exporter 該做的工作如下：
+1. CommonExporterProperty.gather_camera_to_export() -> 取得要匯出的相機列表
+2. 提取每個相機的 ExtrinsicParameter, IntrinsicParameter 並匯出到檔案
+3. CommonExporterProperty.export_image_of_camera() -> 匯出相機的圖片
 """
 
 import bpy
 import mathutils
 import math
 from enum import StrEnum
+from pathlib import Path
+import re
 
 class ExtrinsicParameter:
     """
@@ -94,40 +102,110 @@ class ZForwardCamera:
         flen_normalized = "__sfm_undistorted_loader__flen_normalized"
         img_width = "__sfm_undistorted_loader__img_width"
         img_height = "__sfm_undistorted_loader__img_height"
-        img_name = "__sfm_undistorted_loader__img_name"
+        img_path = "__sfm_undistorted_loader__img_path"
         shiftX = "__sfm_undistorted_loader__shiftX"
         shiftY = "__sfm_undistorted_loader__shiftY"
         pixel_aspect_ratio = "__sfm_undistorted_loader__pixel_aspect_ratio"
     
-    def __init__(self, *, add_arrows: bool=True):
+    def __init__(self, *, add_arrows: bool=False, camera_obj: bpy.types.Object=None):
         """
-        :param add_arrows: 是否要為相機多加一個箭頭作為父物件，輔助顯示相機的區域座標系
-        """
-        bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(math.pi, 0, 0), scale=(1, 1, 1))
-        self.__camera_obj = bpy.context.object
+        ZForwardCamera is a class that represents a camera with a Z-forward coordinate system.
+        
+        由於 Blender 預設的相機座標系為 -Z 朝前，而 Computer Vision 中通常使用 Z 朝前的座標系。
+        所以這個類別用來將 Z 朝前的相機參數轉換成 Blender 的相機參數。
 
+        :param add_arrows: 是否要為相機多加一個箭頭作為父物件，輔助顯示相機的區域座標系
+        :param camera_obj: 
+            如果已經有相機物件，則沿用這個物件作為相機。
+
+            當 `camera_obj` 不為 None 時， `base_obj` 的處理如下：
+            1. 如果 `add_arrows` 為 `True` -> 增加一個箭頭作為 `camera_obj` 的父物件， `base_obj` 為該箭頭物件。
+            2. 否則如果 `camera_obj` 的 "hasArrow" 屬性為 `True` -> 沿用 `camera_obj` 的父物件作為 `base_obj`
+            3. 否則 -> `base_obj` 為 `camera_obj` 本身
+        
+        :raises ValueError: 如果 `camera_obj` 不是相機物件，則會拋出 `ValueError`
+        """
+        create_new_camera = camera_obj is None
+
+        if create_new_camera:
+            bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(0, 0, 0), rotation=(math.pi, 0, 0), scale=(1, 1, 1))
+            self.__camera_obj = bpy.context.object
+        else:
+            if camera_obj.type != 'CAMERA':
+                raise ValueError("camera_obj must be a camera object")
+            self.__camera_obj = camera_obj
+
+        # 如果要加箭頭，則建立一個箭頭物件作為相機的父物件
         if add_arrows:
+            bpy.ops.object.empty_add(type='ARROWS', align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
+            self.__base_obj = bpy.context.object
+            # 將 camera object 的 parent 替換為 base object
+            self.__base_obj.parent = self.__camera_obj.parent
+            self.__camera_obj.parent = self.__base_obj
+            self.__camera_obj[self.Prop.hasArrow] = True
+
+            # 如果不是新建立的相機物件，則將相機物件的 transform 移到 base object 上
+            if not create_new_camera:
+                self.__camera_obj.lock_rotation[:] = [False, False, False]
+                self.__camera_obj.lock_location[:] = [False, False, False]
+                self.__camera_obj.lock_scale[:] = [False, False, False]
+
+                self.__base_obj.matrix_world = self.__camera_obj.matrix_world @ mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
+                self.__camera_obj.matrix_world = mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
+
+            # Lock Editing
             self.__camera_obj.use_camera_lock_parent = True
             self.__camera_obj.lock_rotation[:] = [True, True, True]
             self.__camera_obj.lock_location[:] = [True, True, True]
-
-            bpy.ops.object.empty_add(type='ARROWS', align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
-            self.__base_obj = bpy.context.object            
-            self.__camera_obj.parent = self.__base_obj
-            self.__camera_obj[self.Prop.hasArrow] = True
+        # 如果相機物件已經有箭頭父物件，則沿用該父物件作為 base object
+        elif self.Prop.hasArrow in self.__camera_obj and self.__camera_obj[self.Prop.hasArrow]:
+            self.__base_obj = self.__camera_obj.parent
+        # 如果相機物件沒有箭頭父物件，則 base object 就是相機物件本身
         else:
-            self.__camera_obj.rotation_axis_angle = (0, 0, 0, 0)
             self.__base_obj = self.__camera_obj
             self.__camera_obj[self.Prop.hasArrow] = False
 
-        self.rename('Z Forward Camera')
+        if create_new_camera:
+            self.rename('Z Forward Camera')
+
+    ######################################################################################
+    # region Property
+    ######################################################################################
+    def get_property(self, prop: 'ZForwardCamera.Prop'):
+        """ 取得相機物件的自訂屬性 """
+        return self.__camera_obj[prop] if prop in self.__camera_obj else None
+
+    def set_property(self, prop: 'ZForwardCamera.Prop', value):
+        """ 設定相機物件的自訂屬性 """
+        self.__camera_obj[prop] = value
+
+    def get_save_img_name(self) -> str:
+        """ The name to use when exporting the image. """
+        img_path = self.get_property(ZForwardCamera.Prop.img_path)
+
+        if img_path:
+            return Path(img_path).name
+        else:
+            # Use the camera object name as a fallback, replacing invalid characters with underscores
+            return re.sub(r'[<>:"/\\|?*\x00-\x1F]', '_', self.__camera_obj.name) + '.png'
 
     def has_arrows(self) -> bool:
         """ 是否有箭頭父物件 """
         return self.__camera_obj[self.Prop.hasArrow]
 
+    def get_camera_obj(self) -> bpy.types.Object:
+        """ 取得相機物件 """
+        return self.__camera_obj
+
+    def get_base_obj(self) -> bpy.types.Object:
+        """ 取得箭頭父物件（如果 has_arrows 為 True，否則為相機物件） """
+        return self.__base_obj
+
+    ######################################################################################
+    # region Edit
+    ######################################################################################
     def delete(self):
-        """ 將自己清除 """
+        """ 清除相機物件及箭頭父物件 """
         if self.has_arrows():
             bpy.data.objects.remove(self.__base_obj)
 
@@ -139,7 +217,6 @@ class ZForwardCamera:
         self.__base_obj.name = name
         if self.has_arrows():
             self.__camera_obj.name = f"{name} Camera"
-        self.__camera_obj[self.Prop.img_name] = name
 
     def move_to_collection(self, collection: bpy.types.Collection):
         # move base obj
@@ -154,12 +231,54 @@ class ZForwardCamera:
             for c in cs:
                 c.objects.unlink(self.__camera_obj)
             collection.objects.link(self.__camera_obj)
-        
+
+    ######################################################################################
+    # region Camera Parameter
+    ######################################################################################
+    def extract_extrinsic_param(self) -> ExtrinsicParameter:
+        if self.has_arrows():
+            cam_to_world = self.__base_obj.matrix_world
+        else:
+            cam_to_world = self.__camera_obj.matrix_world @ mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
+        world_to_cam = cam_to_world.inverted()
+
+        R = world_to_cam.to_3x3()
+        T = world_to_cam.to_translation()
+
+        return ExtrinsicParameter(R, T)
+
     def apply_extrinsic_param(self, param: ExtrinsicParameter):
         if self.has_arrows():
             self.__base_obj.matrix_world = param.get_cam_to_world_matrix()
         else:
             self.__base_obj.matrix_world = param.get_cam_to_world_matrix() @ mathutils.Matrix.Rotation(math.pi, 4, (1, 0, 0))
+
+    def extract_intrinsic_param(self, use_cache: bool = True) -> IntrinsicParameter:
+        """
+        從相機物件中提取內參，若 use_cache 為 True，則會先嘗試從相機物件的自訂屬性中讀取內參。
+
+        :param use_cache: 是否使用快取，若為 True，則會從相機物件的自訂屬性中讀取內參。若為 False，則會直接從相機物件中提取內參
+        :return intrinsic: 提取到的內參
+
+        :raises ValueError: 若 use_cache 為 True，且相機物件中沒有快取的內參，則會拋出 ValueError 
+        :raises NotImplementedError: 若 use_cache 為 False，則會拋出 NotImplementedError，因為目前尚未實作從相機物件中提取內參的功能
+        """
+        if use_cache:
+            try:
+                flen_normalized = self.__camera_obj[self.Prop.flen_normalized]
+                img_width = self.__camera_obj[self.Prop.img_width]
+                img_height = self.__camera_obj[self.Prop.img_height]
+                shiftX = self.__camera_obj[self.Prop.shiftX]
+                shiftY = self.__camera_obj[self.Prop.shiftY]
+                pixel_aspect_ratio = self.__camera_obj[self.Prop.pixel_aspect_ratio]
+                
+                return IntrinsicParameter(flen_normalized, img_width, img_height, shiftX, shiftY, pixel_aspect_ratio)
+            except KeyError:
+                raise ValueError("Intrinsic parameters not found in camera object. Please set them first.")
+
+        # 從相機物件中提取內參
+        raise NotImplementedError("Extracting intrinsic parameters from camera object is not implemented yet. Please use cached values.")
+
         
     def apply_intrinsic_param(self, param: IntrinsicParameter):
         # record

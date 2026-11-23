@@ -87,6 +87,8 @@ class JBY_OT_OpenSfmImporter(bpy.types.Operator, ImportHelper, CommonImporterPro
             for shot_id, shot in recon['shots'].items():
                 camera = ZForwardCamera(add_arrows=self.add_arrows)
                 camera.rename(shot_id)
+                img_path = os.path.join(os.path.dirname(self.filepath), "images", shot_id)
+                camera.set_property(ZForwardCamera.Prop.img_path, img_path)
 
                 # intrinsic
                 camera_model = recon['cameras'][shot['camera']]
@@ -104,7 +106,7 @@ class JBY_OT_OpenSfmImporter(bpy.types.Operator, ImportHelper, CommonImporterPro
 
                 # load image
                 if self.add_background:
-                    img = bpy.data.images.load(os.path.join(os.path.dirname(self.filepath), "images", shot_id))
+                    img = bpy.data.images.load(img_path)
                     camera.set_bg_image(img)
 
                 camera.move_to_collection(collection)
